@@ -49,5 +49,62 @@ def explore_dataset():
                 print(f"  {file.name}")
 
 
+    # Let's read and parse the cameras.txt file
+    print("\n=== Camera Information ===")
+    cameras_file = calibration_path / "cameras.txt"
+    if cameras_file.exists():
+        with open(cameras_file, 'r') as f:
+            lines = f.readlines()
+        
+        # Skip comment lines and find camera data
+        for line in lines:
+            line = line.strip()
+            if line and not line.startswith('#'):
+                parts = line.split()
+                camera_id = parts[0]
+                model = parts[1]
+                width = parts[2]
+                height = parts[3]
+                fx = parts[4]  # focal length x
+                fy = parts[5]  # focal length y
+                cx = parts[6]  # principal point x (center)
+                cy = parts[7]  # principal point y (center)
+                
+                print(f"Camera ID: {camera_id}")
+                print(f"Model: {model}")
+                print(f"Image size: {width} x {height} pixels")
+                print(f"Focal length: fx={fx}, fy={fy}")
+                print(f"Principal point: cx={cx}, cy={cy}")
+                break  # Just process first camera
+    
+    # Let's look at camera poses for each image (FIXED for ETH3D format)
+    print("\n=== Camera Poses ===")
+    images_file = calibration_path / "images.txt"
+    if images_file.exists():
+        with open(images_file, 'r') as f:
+            lines = f.readlines()
+        
+        print("Camera positions for each image:")
+        count = 0
+        i = 0
+        while i < len(lines) and count < 3:
+            line = lines[i].strip()
+            if line and not line.startswith('#'):
+                parts = line.split()
+                if len(parts) >= 10:  # Make sure it's the image info line, not points line
+                    image_id = parts[0]
+                    image_name = parts[9]
+                    tx, ty, tz = parts[5], parts[6], parts[7]  # Camera position
+                    
+                    print(f"  Image {image_id}: {image_name}")
+                    print(f"    Camera position: ({tx}, {ty}, {tz})")
+                    count += 1
+                    i += 2  # Skip the next line (points data)
+                else:
+                    i += 1
+            else:
+                i += 1
+
+
 if __name__ == "__main__":
     explore_dataset()
