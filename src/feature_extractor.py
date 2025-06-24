@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 from pathlib import Path
+from config import DATASET_NAME
 
 def extract_orb_features(image_path):
     """Extract ORB features from a single image"""
@@ -83,7 +84,7 @@ def analyze_feature_quality(image_path):
 
 if __name__ == "__main__":
     # Test with one image from our statue dataset
-    images_path = Path("../data/statue/images/dslr_images_undistorted")
+    images_path = Path(f"../data/{DATASET_NAME}/images/dslr_images_undistorted")
     
     # Get the first image file
     image_files = list(images_path.glob("*.JPG"))
@@ -101,7 +102,7 @@ if __name__ == "__main__":
             image_with_features = visualize_features(first_image, keypoints)
             
             # Save the result so you can see it
-            output_path = Path("../data/statue/features_visualization.jpg")
+            output_path = Path(f"../data/{DATASET_NAME}/features_visualization.jpg")
             cv2.imwrite(str(output_path), image_with_features)
             print(f"Saved visualization to: {output_path}")
         else:

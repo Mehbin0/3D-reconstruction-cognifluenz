@@ -1,11 +1,12 @@
 import os
 from pathlib import Path
+from config import DATASET_NAME
 
 def explore_dataset():
     """Our first function - let's see what data we have"""
     
     # Define the path to our statue data
-    data_path = Path("../data/statue")  # Go up one level, then into data/statue
+    data_path = Path(f"../data/{DATASET_NAME}")  # Go up one level, then into data/statue
     
     print("=== ETH3D Dataset Explorer ===")
     

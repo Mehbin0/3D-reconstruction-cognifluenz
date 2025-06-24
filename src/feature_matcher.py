@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 from pathlib import Path
 from feature_extractor import extract_orb_features
+from config import DATASET_NAME
 
 def match_features_between_images(image1_path, image2_path):
     """Find matching features between two images"""
@@ -65,7 +66,7 @@ def filter_matches_with_ratio_test(desc1, desc2, ratio_threshold=0.75):
 
 if __name__ == "__main__":
     # Test with two consecutive images from our statue
-    images_path = Path("../data/statue/images/dslr_images_undistorted")
+    images_path = Path(f"../data/{DATASET_NAME}/images/dslr_images_undistorted")
     image_files = sorted(list(images_path.glob("*.JPG")))
     
     if len(image_files) >= 2:
@@ -83,7 +84,7 @@ if __name__ == "__main__":
             matched_image = visualize_matches(image1, image2, matches, kp1, kp2)
             
             # Save visualization
-            output_path = Path("../data/statue/feature_matches.jpg")
+            output_path = Path(f"../data/{DATASET_NAME}/feature_matches.jpg")
             cv2.imwrite(str(output_path), matched_image)
             print(f"Saved match visualization to: {output_path}")
         else:
