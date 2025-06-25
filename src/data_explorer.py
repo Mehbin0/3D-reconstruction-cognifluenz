@@ -2,17 +2,14 @@ import os
 from pathlib import Path
 from config import DATASET_NAME
 
-def explore_dataset():
-    """Our first function - let's see what data we have"""
-    
-    # Define the path to our statue data
-    data_path = Path(f"../data/{DATASET_NAME}")  # Go up one level, then into data/statue
+# Explore dataset
+def explore():
+    data_path = Path(f"../data/{DATASET_NAME}")
+    if not data_path.exists():
+        raise FileNotFoundError(f"Data directory not found: {data_path}")
     
     print("=== ETH3D Dataset Explorer ===")
-    
-    # Your task: Add one line here to print the data_path
     print(f"Looking in: {data_path}")
-    # Check if the path exists
     print(f"Path exists: {data_path.exists()}")
 
     # Let's see what's inside our statue folder
@@ -105,7 +102,7 @@ def explore_dataset():
                     i += 1
             else:
                 i += 1
-
+    print("Dataset exploration completed successfully")
 
 if __name__ == "__main__":
-    explore_dataset()
+    explore()

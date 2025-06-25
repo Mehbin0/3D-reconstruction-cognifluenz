@@ -4,34 +4,12 @@ from pathlib import Path
 from feature_matcher import match_features_between_images
 from config import DATASET_NAME
 
-def estimate_camera_pose(matches, kp1, kp2, camera_matrix):
-    """Estimate camera pose between two images"""
-    
-    if len(matches) < 8:
-        print("Need at least 8 matches for pose estimation")
-        return None, None
-    
-    # Extract matched point coordinates
-    pts1 = np.float32([kp1[m.queryIdx].pt for m in matches]).reshape(-1, 1, 2)
-    pts2 = np.float32([kp2[m.trainIdx].pt for m in matches]).reshape(-1, 1, 2)
-    
-    print(f"Using {len(matches)} matches for pose estimation")
-    
-    # Find Essential Matrix
-    essential_matrix, mask = cv2.findEssentialMat(
-        pts1, pts2, camera_matrix, 
-        method=cv2.RANSAC, 
-        prob=0.999, 
-        threshold=1.0
-    )
-    
-    # Recover rotation and translation
-    _, R, t, mask = cv2.recoverPose(essential_matrix, pts1, pts2, camera_matrix)
-    
-    print(f"Pose estimation successful!")
-    print(f"Rotation matrix shape: {R.shape}")
-    print(f"Translation vector shape: {t.shape}")
-    
+# Estimate camera pose
+def estimate_pose(matches, camera_matrix):
+    pts1 = np.float32([m.queryIdx for m in matches]).reshape(-1, 1, 2)
+    pts2 = np.float32([m.trainIdx for m in matches]).reshape(-1, 1, 2)
+    essential_matrix, _ = cv2.findEssentialMat(pts1, pts2, camera_matrix)
+    _, R, t, _ = cv2.recoverPose(essential_matrix, pts1, pts2, camera_matrix)
     return R, t
 
 def load_camera_matrix():
@@ -93,9 +71,11 @@ if __name__ == "__main__":
                 matches, kp1, kp2 = result
                 
                 # Estimate pose
-                R, t = estimate_camera_pose(matches, kp1, kp2, K)
+                R, t = estimate_pose(matches, K)
                 
                 if R is not None:
                     print(f"\n✅ Camera motion estimated!")
                     print(f"Translation (camera movement): {t.flatten()}")
                     print(f"Camera moved: {np.linalg.norm(t):.3f} units")
+    
+    print("Pose estimation completed successfully")

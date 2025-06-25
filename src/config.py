@@ -1,1 +1,1 @@
-DATASET_NAME = "courtyard"
+DATASET_NAME = "statue"
