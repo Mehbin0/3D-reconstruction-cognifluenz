@@ -45,8 +45,9 @@ class CameraIntrinsics:
                            [0,  0,  1]], dtype=np.float64)
 
 class PoseEstimator:
-    def __init__(self, K):
-        self.K = K
+    def __init__(self, K1, K2):
+        self.K1 = K1
+        self.K2 = K2
 
     def estimate(self, kp1, kp2, matches):
         # Get numpy array of keypoints' coordinates in the matches
@@ -55,17 +56,22 @@ class PoseEstimator:
         pts1 = np.float32([kp1[m.queryIdx].pt for m in matches])
         pts2 = np.float32([kp2[m.trainIdx].pt for m in matches])
         # ptsx is the numpy array of points in the first image which are matched to ptsy
-        E, mask = cv2.findEssentialMat(pts1, pts2, self.K, method=cv2.RANSAC, prob=0.999, threshold=1.0)
+        # Normalize points using each camera's intrinsics
+        pts1_norm = cv2.undistortPoints(pts1.reshape(-1, 1, 2), self.K1, None).reshape(-1, 2)
+        pts2_norm = cv2.undistortPoints(pts2.reshape(-1, 1, 2), self.K2, None).reshape(-1, 2)
+        # Estimate essential matrix using normalized points
+        E, mask = cv2.findEssentialMat(pts1, pts2, self.K1, method=cv2.RANSAC, prob=0.999, threshold=1.0)
         # RANSAC creates models trained on subsets of the matches, and selects the model with maximum possible error 1.0 and confidence 0.999
         # mask is an array of 0s and 1s, where 1 means the match is inliers and 0 means outliers
-        _, R, t, mask_pose = cv2.recoverPose(E, pts1, pts2, self.K)
-        # mask_pose is an array of 0s and 1s, where 1 means the match fits  the estimated pose and 0 means it does not
-        return R, t, mask_pose
-        # More 1s in mask_pose usually means a more reliable pose estimate
+        # Recover pose using normalized points
+        _, R, t, mask_pose = cv2.recoverPose(E, pts1, pts2, self.K1)
 
+        return R, t, mask_pose
+    
 class Triangulator:
-    def __init__(self, K):
-        self.K = K
+    def __init__(self, K1, K2):
+        self.K1 = K1
+        self.K2 = K2
 
     def triangulate(self, kp1, kp2, matches, R, t):
         pts1 = np.float32([kp1[m.queryIdx].pt for m in matches])
@@ -76,9 +82,9 @@ class Triangulator:
         #          [0, 0, 1, 0]]
         proj2 = np.hstack((R, t))
         # proj2 defines the second camera's pose in the world coordinate system with respect to the first camera
-        # self.K is the intrinsic matrix of the camera (focal lengths and principal point)
-        P1 = self.K @ proj1
-        P2 = self.K @ proj2
+        # self.K1 is the intrinsic matrix of the camera 1 (focal lengths and principal point)
+        P1 = self.K1 @ proj1
+        P2 = self.K2 @ proj2
         # @ is the matrix multiplication operator in Python
         # P1 and P2 are the projection matrices for the first and second cameras respectively
         pts4d = cv2.triangulatePoints(P1, P2, pts1.T, pts2.T)
@@ -86,12 +92,21 @@ class Triangulator:
         return pts3d.T
 
 class DenseReconstructor:
-    def __init__(self, K):
-        self.K = K
+    def __init__(self, K1, K2, baseline):
+        self.K1 = K1
+        self.K2 = K2
+        self.baseline = baseline  # Baseline distance between the two cameras
 
     def compute_depth_map(self, imgL, imgR):
         grayL = cv2.cvtColor(imgL, cv2.COLOR_BGR2GRAY)
         grayR = cv2.cvtColor(imgR, cv2.COLOR_BGR2GRAY)
+        grayL = grayL.astype(np.uint8)
+        grayR = grayR.astype(np.uint8)
+        if grayL.shape != grayR.shape:
+            print(f"Warning: Image sizes do not match! Left: {grayL.shape}, Right: {grayR.shape}")
+            # Optionally, resize right to match left:
+            print("Resizing right image to match left image size.")
+            grayR = cv2.resize(grayR, (grayL.shape[1], grayL.shape[0]))
         stereo = cv2.StereoSGBM_create(
             minDisparity=0,
             numDisparities=64,
@@ -106,11 +121,19 @@ class DenseReconstructor:
 
     def depth_to_point_cloud(self, disparity, imgL):
         h, w = disparity.shape
-        f = self.K[0, 0]
-        Q = np.float32([[1, 0, 0, -self.K[0, 2]],
-                        [0, -1, 0, self.K[1, 2]],
-                        [0, 0, 0, -f],
-                        [0, 0, 1, 0]])
+        # Use the left camera's intrinsics for Q matrix
+        fx = self.K1[0, 0]
+        cx = self.K1[0, 2]
+        cy = self.K1[1, 2]
+        # Estimate baseline from translation vector (assume t is in meters)
+        # If you have the actual baseline, use it here
+        baseline = self.baseline
+        Q = np.float32([
+            [1, 0, 0, -cx],
+            [0, 1, 0, -cy],
+            [0, 0, 0, fx],
+            [0, 0, -1 / baseline, 0]
+        ])
         points_3d = cv2.reprojectImageTo3D(disparity, Q)
         mask = disparity > disparity.min()
         colors = cv2.cvtColor(imgL, cv2.COLOR_BGR2RGB)
@@ -152,6 +175,7 @@ def main():
     # Try to read intrinsics from calibration/cameras.txt
     calib_file = os.path.join(dataset_path, "calibration", "cameras.txt")
     fx = fy = cx = cy = None
+    camera_intrinsics = {}
     if os.path.isfile(calib_file):
         print(f"Reading intrinsics from {calib_file}...")
         with open(calib_file, "r") as f:
@@ -162,20 +186,31 @@ def main():
                 parts = line.split()
                 if len(parts) >= 8:
                     # Format: camera_id, model, width, height, fx, fy, cx, cy, ...
+                    cam_id = int(parts[0])
                     fx = float(parts[4])
                     fy = float(parts[5])
                     cx = float(parts[6])
                     cy = float(parts[7])
-                    print(f"Read intrinsics from {calib_file}:")
-                    print(f"fx: {fx}, fy: {fy}, cx: {cx}, cy: {cy}")
-                    break
-    if fx is None or fy is None or cx is None or cy is None:
-        print(f"Could not read intrinsics from {calib_file}. Please enter them manually.")
-        fx = float(input("Enter fx: "))
-        fy = float(input("Enter fy: "))
-        cx = float(input("Enter cx: "))
-        cy = float(input("Enter cy: "))
-    
+                    camera_intrinsics[cam_id] = (fx, fy, cx, cy)
+        if len(camera_intrinsics) > 0:
+            print(f"Found {len(camera_intrinsics)} cameras in {calib_file}.")
+        else:
+            print("No valid camera intrinsics found in the calibration file.")
+            sys.exit(1)
+
+    image_camera_id = {}
+    images_txt = os.path.join(dataset_path, "calibration", "images.txt")
+    with open(images_txt, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split()
+            if len(parts) == 10:
+                image_name = parts[-1]
+                cam_id = int(parts[8])
+                image_camera_id[image_name.split("/")[-1]] = cam_id
+        
     # --- Load images ---
     loader = DataLoader(dataset_path)
     if len(loader.images) < 2:
@@ -202,11 +237,17 @@ def main():
     print(f"Found {len(matches)} matches.")
 
     # --- Camera intrinsics ---
-    intrinsics = CameraIntrinsics(fx, fy, cx, cy)
-    # intrinsics.K is the camera intrinsic matrix (Calibration matrix)
+    print("Fetching camera intrinsics...")
+    image_files = sorted(os.listdir(os.path.join(dataset_path, 'images')))
+    fname1 = image_files[i1]
+    fname2 = image_files[i2]
+    intrinsics1 = CameraIntrinsics(*camera_intrinsics[image_camera_id[fname1]])
+    print(f"Camera intrinsics for {fname1}: {intrinsics1.K}")
+    intrinsics2 = CameraIntrinsics(*camera_intrinsics[image_camera_id[fname2]])
+    print(f"Camera intrinsics for {fname2}: {intrinsics2.K}")
 
     # --- Pose estimation ---
-    pose_estimator = PoseEstimator(intrinsics.K)
+    pose_estimator = PoseEstimator(intrinsics1.K, intrinsics2.K)
     R, t, mask_pose = pose_estimator.estimate(kp1, kp2, matches)
     print("Estimated pose between first two images.")
 
@@ -220,7 +261,7 @@ def main():
             print("Exiting.")
             sys.exit(0)
         if choice == '1':
-            triangulator = Triangulator(intrinsics.K)
+            triangulator = Triangulator(intrinsics1.K, intrinsics2.K)
             pts3d = triangulator.triangulate(kp1, kp2, matches, R, t)
             print(f"Triangulated {pts3d.shape[0]} 3D points.")
             while True:
@@ -247,9 +288,10 @@ def main():
                         subsample_points = pts3d
                     Visualizer.plot_point_cloud(subsample_points, title="Sparse 3D Point Cloud")
         elif choice == '2':
-            dense_reconstructor = DenseReconstructor(intrinsics.K)
-            disparity = dense_reconstructor.compute_depth_map(loader.images[0], loader.images[1])
-            points_dense, colors_dense = dense_reconstructor.depth_to_point_cloud(disparity, loader.images[0])
+            baseline = np.linalg.norm(t)  # Assuming t is the translation vector between the two cameras
+            dense_reconstructor = DenseReconstructor(intrinsics1.K, intrinsics2.K,baseline)
+            disparity = dense_reconstructor.compute_depth_map(loader.images[i1], loader.images[i2])
+            points_dense, colors_dense = dense_reconstructor.depth_to_point_cloud(disparity, loader.images[i1])
             print(f"Dense point cloud has {points_dense.shape[0]} points.")
             while True:
                 print("\n--- Dense Reconstruction ---")
