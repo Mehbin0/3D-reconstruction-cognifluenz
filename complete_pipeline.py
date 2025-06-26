@@ -133,9 +133,49 @@ class Visualizer:
 
 def main():
     # --- User parameters ---
-    dataset_path = "data/statue"  # Change as needed
-    fx, fy, cx, cy = 3410.99, 3412.37, 3129.34, 2059.72  # Example intrinsics, replace with real values
+    # List available datasets in the 'data' folder
+    data_root = "data"
+    datasets = [d for d in os.listdir(data_root) if os.path.isdir(os.path.join(data_root, d))]
+    if not datasets:
+        print("No datasets found in the 'data' folder.")
+        sys.exit(1)
+    print("Available datasets:")
+    for idx, name in enumerate(datasets):
+        print(f"{idx}: {name}")
+    ds_idx = input("Select dataset index: ").strip()
+    if not ds_idx.isdigit() or int(ds_idx) < 0 or int(ds_idx) >= len(datasets):
+        print("Invalid selection.")
+        sys.exit(1)
+    dataset_name = datasets[int(ds_idx)]
+    dataset_path = os.path.join(data_root, dataset_name)
 
+    # Try to read intrinsics from calibration/cameras.txt
+    calib_file = os.path.join(dataset_path, "calibration", "cameras.txt")
+    fx = fy = cx = cy = None
+    if os.path.isfile(calib_file):
+        print(f"Reading intrinsics from {calib_file}...")
+        with open(calib_file, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split()
+                if len(parts) >= 8:
+                    # Format: camera_id, model, width, height, fx, fy, cx, cy, ...
+                    fx = float(parts[4])
+                    fy = float(parts[5])
+                    cx = float(parts[6])
+                    cy = float(parts[7])
+                    print(f"Read intrinsics from {calib_file}:")
+                    print(f"fx: {fx}, fy: {fy}, cx: {cx}, cy: {cy}")
+                    break
+    if fx is None or fy is None or cx is None or cy is None:
+        print(f"Could not read intrinsics from {calib_file}. Please enter them manually.")
+        fx = float(input("Enter fx: "))
+        fy = float(input("Enter fy: "))
+        cx = float(input("Enter cx: "))
+        cy = float(input("Enter cy: "))
+    
     # --- Load images ---
     loader = DataLoader(dataset_path)
     if len(loader.images) < 2:
@@ -143,11 +183,17 @@ def main():
         return
     # Images extracted to loader.images
 
+    for idx, fname in enumerate(sorted(os.listdir(os.path.join(dataset_path, 'images')))):
+        print(f"{idx}: {fname}")
+
+    i1 = int(input("Enter index of first image: "))
+    i2 = int(input("Enter index of second image: "))
+
     # --- Feature extraction ---
     extractor = FeatureExtractor()
     # Get keypoints and descriptors for the first two images
-    kp1, desc1 = extractor.extract(loader.images[0])
-    kp2, desc2 = extractor.extract(loader.images[1])
+    kp1, desc1 = extractor.extract(loader.images[i1])
+    kp2, desc2 = extractor.extract(loader.images[i2])
 
     # --- Feature matching ---
     matcher = FeatureMatcher()
@@ -266,6 +312,6 @@ def main():
                     norm_disp = norm_disp.astype(np.uint8)
                     cv2.imwrite("disparity_map.png", norm_disp)
                     print("Saved: disparity_map.png")
-                    
+
 if __name__ == "__main__":
     main()
