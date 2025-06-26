@@ -2,6 +2,8 @@ import cv2
 import numpy as np
 from pathlib import Path
 from config import DATASET_NAME
+import matplotlib.pyplot as plt
+import pyvista as pv
 
 # Validate data setup
 
@@ -23,7 +25,7 @@ def compute_depth_map(image1_path, image2_path, camera_matrix, R, t):
     depth_map = (focal_length * baseline) / (disparity + 1e-6)
     return depth_map
 
-# Generate and save 3D point cloud
+# Generate 3D point cloud
 
 def generate_point_cloud(depth_map, camera_matrix):
     height, width = depth_map.shape
@@ -38,25 +40,27 @@ def generate_point_cloud(depth_map, camera_matrix):
     Y = (valid_y - cy) * valid_depths / fy
     Z = valid_depths
     points_3d = np.column_stack((X, Y, Z))
-    output_path = Path(f"../data/{DATASET_NAME}/points3D.txt")
-    np.savetxt(output_path, points_3d, fmt="%.6f")
-    print(f"3D point cloud saved at: {output_path}")
     return points_3d
 
-# Export 3D point cloud to PLY format
+# Visualize 3D point cloud
 
-def export_point_cloud_to_ply(points_3d, file_path):
-    with open(file_path, 'w') as f:
-        f.write("ply\n")
-        f.write("format ascii 1.0\n")
-        f.write(f"element vertex {len(points_3d)}\n")
-        f.write("property float x\n")
-        f.write("property float y\n")
-        f.write("property float z\n")
-        f.write("end_header\n")
-        for point in points_3d:
-            f.write(f"{point[0]:.6f} {point[1]:.6f} {point[2]:.6f}\n")
-    print(f"3D point cloud exported to PLY format at: {file_path}")
+def visualize_point_cloud(points_3d):
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(points_3d[:, 0], points_3d[:, 1], points_3d[:, 2], s=1)
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
+    ax.set_zlabel("Z")
+    plt.show()
+
+# Visualize 3D surface cloud
+
+def visualize_surface_cloud(points_3d):
+    cloud = pv.PolyData(points_3d)
+    surface = cloud.delaunay_2d()
+    plotter = pv.Plotter()
+    plotter.add_mesh(surface, color="lightblue")
+    plotter.show()
 
 # Main function
 
@@ -78,8 +82,11 @@ def main():
     cv2.imwrite(str(output_path), normalized_depth_map)
     print(f"Normalized depth map saved at: {output_path}")
     points_3d = generate_point_cloud(depth_map, camera_matrix)
-    ply_output_path = Path(f"../data/{DATASET_NAME}/points3D.ply")
-    export_point_cloud_to_ply(points_3d, ply_output_path)
+    print("3D point cloud generated successfully")
+
+    # Removed visualizer integration
+    # The point cloud is generated and can be used separately for visualization
+    return points_3d
 
 if __name__ == "__main__":
     main()

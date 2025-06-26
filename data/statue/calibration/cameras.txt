@@ -1,4 +1,5 @@
 # Camera list with one line of data per camera:
 #   CAMERA_ID, MODEL, WIDTH, HEIGHT, PARAMS[]
+# For the PINHOLE model, the order of PARAMS[] is fx fy cx cy
 # Number of cameras: 1
 0 PINHOLE 6208 4138 3410.99 3412.37 3129.34 2059.72
