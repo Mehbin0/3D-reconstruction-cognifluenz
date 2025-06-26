@@ -239,52 +239,33 @@ def main():
                     depth_img = np.zeros_like(disparity, dtype=np.float32)
                     mask = disparity > disparity.min()
                     depth_img[mask] = depth
-                    # Normalize to 0-255 for saving as 8-bit image
+                    # Remove invalid values before percentile calculation
                     valid_depths = depth_img[mask]
                     valid_depths = valid_depths[np.isfinite(valid_depths)]
                     if valid_depths.size > 0:
-                        max_depth = np.percentile(valid_depths, 99)  # or set a fixed value
+                        # Use robust percentiles to avoid outliers
+                        max_depth = np.percentile(valid_depths, 99)
                         min_depth = np.percentile(valid_depths, 1)
-                        clipped = np.clip(depth_img, min_depth, max_depth)
-                        norm_depth = cv2.normalize(clipped, None, 0, 255, cv2.NORM_MINMAX)
+                        # Avoid degenerate normalization
+                        if max_depth > min_depth:
+                            clipped = np.clip(depth_img, min_depth, max_depth)
+                            norm_depth = cv2.normalize(clipped, None, 0, 255, cv2.NORM_MINMAX)
+                        else:
+                            norm_depth = np.zeros_like(depth_img, dtype=np.uint8)
                         norm_depth = np.nan_to_num(norm_depth, nan=0, posinf=0, neginf=0)
                         norm_depth = norm_depth.astype(np.uint8)
                     else:
                         norm_depth = np.zeros_like(depth_img, dtype=np.uint8)
                     cv2.imwrite("dense_depth_map.png", norm_depth)
                     print("Saved: dense_depth_map.png")
-                    # norm_depth = cv2.normalize(depth_img, None, 0, 255, cv2.NORM_MINMAX)
-                    # norm_depth = np.nan_to_num(norm_depth, nan=0, posinf=0, neginf=0)
-                    # norm_depth = norm_depth.astype(np.uint8)
-                    # cv2.imwrite("dense_depth_map.png", norm_depth)
-                    # print("Saved: dense_depth_map.png")
                 elif sub_choice == '3':
                     # Save disparity map as image (normalize for visualization)
                     disp = disparity.copy()
-                    disp[disp == np.inf] = 0
-                    disp[disp == -np.inf] = 0
-                    disp = np.nan_to_num(disp)
+                    disp[~np.isfinite(disp)] = 0
                     norm_disp = cv2.normalize(disp, None, 0, 255, cv2.NORM_MINMAX)
                     norm_disp = norm_disp.astype(np.uint8)
                     cv2.imwrite("disparity_map.png", norm_disp)
                     print("Saved: disparity_map.png")
                     
-    # # --- Triangulation (Sparse reconstruction) ---
-    # triangulator = Triangulator(intrinsics.K)
-    # pts3d = triangulator.triangulate(kp1, kp2, matches, R, t)
-    # print(f"Triangulated {pts3d.shape[0]} 3D points.")
-
-    # # --- Visualization (Sparse) ---
-    # Visualizer.plot_point_cloud(pts3d, title="Sparse 3D Point Cloud")
-
-    # # --- Dense reconstruction (optional) ---
-    # dense_reconstructor = DenseReconstructor(intrinsics.K)
-    # disparity = dense_reconstructor.compute_depth_map(loader.images[0], loader.images[1])
-    # points_dense, colors_dense = dense_reconstructor.depth_to_point_cloud(disparity, loader.images[0])
-    # print(f"Dense point cloud has {points_dense.shape[0]} points.")
-
-    # # --- Visualization (Dense) ---
-    # Visualizer.plot_point_cloud(points_dense, colors_dense, title="Dense 3D Point Cloud")
-
 if __name__ == "__main__":
     main()
