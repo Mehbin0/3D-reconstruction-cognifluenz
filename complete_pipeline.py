@@ -60,11 +60,19 @@ class PoseEstimator:
         pts1_norm = cv2.undistortPoints(pts1.reshape(-1, 1, 2), self.K1, None).reshape(-1, 2)
         pts2_norm = cv2.undistortPoints(pts2.reshape(-1, 1, 2), self.K2, None).reshape(-1, 2)
         # Estimate essential matrix using normalized points
+<<<<<<< HEAD
         E, mask = cv2.findEssentialMat(pts1_norm, pts2_norm, self.K1, method=cv2.RANSAC, prob=0.999, threshold=1.0)
         # RANSAC creates models trained on subsets of the matches, and selects the model with maximum possible error 1.0 and confidence 0.999
         # mask is an array of 0s and 1s, where 1 means the match is inliers and 0 means outliers
         # Recover pose using normalized points
         _, R, t, mask_pose = cv2.recoverPose(E, pts1_norm, pts2_norm, self.K1)
+=======
+        E, mask = cv2.findEssentialMat(pts1, pts2, self.K1, method=cv2.RANSAC, prob=0.999, threshold=1.0)
+        # RANSAC creates models trained on subsets of the matches, and selects the model with maximum possible error 1.0 and confidence 0.999
+        # mask is an array of 0s and 1s, where 1 means the match is inliers and 0 means outliers
+        # Recover pose using normalized points
+        _, R, t, mask_pose = cv2.recoverPose(E, pts1, pts2, self.K1)
+>>>>>>> 8a5dd391f68343b3c8b5fabc82862f91cef0634e
 
         return R, t, mask_pose
     
@@ -313,6 +321,7 @@ def main():
     else:
         print("No valid 3D points found from the image pairs.")
 
+<<<<<<< HEAD
 
     # i1 = int(input("Enter index of first image: "))
     # i2 = int(input("Enter index of second image: "))
@@ -446,6 +455,126 @@ def main():
 #                     norm_disp = norm_disp.astype(np.uint8)
 #                     cv2.imwrite("disparity_map.png", norm_disp)
 #                     print("Saved: disparity_map.png")
+=======
+    # --- Camera intrinsics ---
+    print("Fetching camera intrinsics...")
+    image_files = sorted(os.listdir(os.path.join(dataset_path, 'images')))
+    fname1 = image_files[i1]
+    fname2 = image_files[i2]
+    intrinsics1 = CameraIntrinsics(*camera_intrinsics[image_camera_id[fname1]])
+    print(f"Camera intrinsics for {fname1}: {intrinsics1.K}")
+    intrinsics2 = CameraIntrinsics(*camera_intrinsics[image_camera_id[fname2]])
+    print(f"Camera intrinsics for {fname2}: {intrinsics2.K}")
+
+    # --- Pose estimation ---
+    pose_estimator = PoseEstimator(intrinsics1.K, intrinsics2.K)
+    R, t, mask_pose = pose_estimator.estimate(kp1, kp2, matches)
+    print("Estimated pose between first two images.")
+
+    while True:
+        print("\n=== Main Menu ===")
+        print("1. Sparse Reconstruction")
+        print("2. Dense Reconstruction")
+        print("e. Exit")
+        choice = input("Select reconstruction type: ").strip().lower()
+        if choice == 'e':
+            print("Exiting.")
+            sys.exit(0)
+        if choice == '1':
+            triangulator = Triangulator(intrinsics1.K, intrinsics2.K)
+            pts3d = triangulator.triangulate(kp1, kp2, matches, R, t)
+            print(f"Triangulated {pts3d.shape[0]} 3D points.")
+            while True:
+                print("\n--- Sparse Reconstruction ---")
+                print("1. Visualize (with optional subsample)")
+                print("b. Back")
+                print("e. Exit")
+                sub_choice = input("Choose an option: ").strip().lower()
+                if sub_choice == 'e':
+                    print("Exiting.")
+                    sys.exit(0)
+                if sub_choice == 'b':
+                    break
+                elif sub_choice == '1':
+                    print(f"Total points: {pts3d.shape[0]}")
+                    subsample = input("Enter subsample size (number of points to visualize, or press Enter to show all): ").strip()
+                    if subsample == "":
+                        subsample_points = pts3d
+                    elif subsample.isdigit() and 0 < int(subsample) <= pts3d.shape[0]:
+                        idx = np.random.choice(pts3d.shape[0], int(subsample), replace=False)
+                        subsample_points = pts3d[idx]
+                    else:
+                        print("Invalid input. Showing all points.")
+                        subsample_points = pts3d
+                    Visualizer.plot_point_cloud(subsample_points, title="Sparse 3D Point Cloud")
+        elif choice == '2':
+            baseline = np.linalg.norm(t)  # Assuming t is the translation vector between the two cameras
+            dense_reconstructor = DenseReconstructor(intrinsics1.K, intrinsics2.K,baseline)
+            disparity = dense_reconstructor.compute_depth_map(loader.images[i1], loader.images[i2])
+            points_dense, colors_dense = dense_reconstructor.depth_to_point_cloud(disparity, loader.images[i1])
+            print(f"Dense point cloud has {points_dense.shape[0]} points.")
+            while True:
+                print("\n--- Dense Reconstruction ---")
+                print("1. Visualize (with optional subsample)")
+                print("2. Save depth map as image")
+                print("3. Save disparity map as image")
+                print("b. Back")
+                print("e. Exit")
+                sub_choice = input("Choose an option: ").strip().lower()
+                if sub_choice == 'e':
+                    print("Exiting.")
+                    sys.exit(0)
+                if sub_choice == 'b':
+                    break
+                elif sub_choice == '1':
+                    print(f"Total points: {points_dense.shape[0]}")
+                    subsample = input("Enter subsample size (number of points to visualize, or press Enter to show all): ").strip()
+                    if subsample == "":
+                        subsample_points = points_dense
+                        subsample_colors = colors_dense
+                    elif subsample.isdigit() and 0 < int(subsample) <= points_dense.shape[0]:
+                        idx = np.random.choice(points_dense.shape[0], int(subsample), replace=False)
+                        subsample_points = points_dense[idx]
+                        subsample_colors = colors_dense[idx]
+                    else:
+                        print("Invalid input. Showing all points.")
+                        subsample_points = points_dense
+                        subsample_colors = colors_dense
+                    Visualizer.plot_point_cloud(subsample_points, subsample_colors, title="Dense 3D Point Cloud")
+                elif sub_choice == '2':
+                    # Save depth map as image (normalize for visualization)
+                    depth = points_dense[:, 2]
+                    depth_img = np.zeros_like(disparity, dtype=np.float32)
+                    mask = disparity > disparity.min()
+                    depth_img[mask] = depth
+                    # Remove invalid values before percentile calculation
+                    valid_depths = depth_img[mask]
+                    valid_depths = valid_depths[np.isfinite(valid_depths)]
+                    if valid_depths.size > 0:
+                        # Use robust percentiles to avoid outliers
+                        max_depth = np.percentile(valid_depths, 99)
+                        min_depth = np.percentile(valid_depths, 1)
+                        # Avoid degenerate normalization
+                        if max_depth > min_depth:
+                            clipped = np.clip(depth_img, min_depth, max_depth)
+                            norm_depth = cv2.normalize(clipped, None, 0, 255, cv2.NORM_MINMAX)
+                        else:
+                            norm_depth = np.zeros_like(depth_img, dtype=np.uint8)
+                        norm_depth = np.nan_to_num(norm_depth, nan=0, posinf=0, neginf=0)
+                        norm_depth = norm_depth.astype(np.uint8)
+                    else:
+                        norm_depth = np.zeros_like(depth_img, dtype=np.uint8)
+                    cv2.imwrite("dense_depth_map.png", norm_depth)
+                    print("Saved: dense_depth_map.png")
+                elif sub_choice == '3':
+                    # Save disparity map as image (normalize for visualization)
+                    disp = disparity.copy()
+                    disp[~np.isfinite(disp)] = 0
+                    norm_disp = cv2.normalize(disp, None, 0, 255, cv2.NORM_MINMAX)
+                    norm_disp = norm_disp.astype(np.uint8)
+                    cv2.imwrite("disparity_map.png", norm_disp)
+                    print("Saved: disparity_map.png")
+>>>>>>> 8a5dd391f68343b3c8b5fabc82862f91cef0634e
 
 if __name__ == "__main__":
     main()
