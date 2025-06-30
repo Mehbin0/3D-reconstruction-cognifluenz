@@ -144,7 +144,7 @@ class DenseReconstructor:
 class Visualizer:
     # staticmethod allows us to call this method without creating an instance of Visualizer
     @staticmethod
-    def plot_point_cloud(points, colors=None, title="3D Point Cloud", use_open3d=False):
+    def plot_point_cloud(points, colors=None, title="3D Point Cloud", use_open3d=False, remove_outliers=False):
         if use_open3d:
             # Use Open3D for interactive visualization
             pcd = o3d.geometry.PointCloud()
@@ -154,6 +154,14 @@ class Visualizer:
                 if colors.max() > 1.0:
                     colors = colors / 255.0
                 pcd.colors = o3d.utility.Vector3dVector(colors)
+            if remove_outliers:
+                print("Removing statistical outliers...")
+                # The two main parameters are nb_neighbors and std_ratio.
+                # nb_neighbors: How many neighbors to consider for mean distance calculation.
+                # std_ratio: The standard deviation ratio. The higher, the more conservative the filtering.
+                cl, ind = pcd.remove_statistical_outlier(nb_neighbors=20, std_ratio=2.0)
+                pcd = pcd.select_by_index(ind)
+                print(f"Filtered point cloud to {len(pcd.points)} points.")
             o3d.visualization.draw_geometries([pcd], window_name=title)
         else:
             # Fallback to matplotlib
@@ -283,20 +291,20 @@ def main():
         t_world = np.zeros((3, 1))
         for j in range(i):
             R_prev, t_prev = rnt[j]
-            t_world = R_prev @ t_world + t_prev
-            R_world = R_prev @ R_world
+            t_world = t_world + R_world @ t_prev
+            R_world = R_world @ R_prev
         # Transform points: X_world = R_world @ X_cam.T + t_world, then transpose back
         pts3d_world = (R_world @ pts3d.T).T + t_world.reshape(1, 3)
         pts3d = pts3d_world
         all_pts3d.append(pts3d)
-        if i == 0:
-            colors = np.tile(np.array([255, 0, 0]), (pts3d.shape[0], 1))  # Red
-        elif i == 1:
-            colors = np.tile(np.array([255, 255, 0]), (pts3d.shape[0], 1))  # Yellow
-        elif i == 2:
-            colors = np.tile(np.array([0, 0, 255]), (pts3d.shape[0], 1))  # Blue
-        else:
-            colors = np.array(colors)
+        # if i == 0:
+        #     colors = np.tile(np.array([255, 0, 0]), (pts3d.shape[0], 1))  # Red
+        # elif i == 1:
+        #     colors = np.tile(np.array([255, 255, 0]), (pts3d.shape[0], 1))  # Yellow
+        # elif i == 2:
+        #     colors = np.tile(np.array([0, 0, 255]), (pts3d.shape[0], 1))  # Blue
+        # else:
+        colors = np.array(colors)
         all_colors.append(colors)
         # Visualizer.plot_point_cloud(np.vstack(all_pts3d), colors=np.vstack(all_colors), title=f"Sparse 3D Point Cloud from Pair {i} and {i+1}", use_open3d=True)
     # Merge all points into one big array
@@ -309,7 +317,7 @@ def main():
         # select unique colors based on unique points
         unique_colors = merged_colors[unique_indices]
         print(f"Total unique 3D points from all pairs: {unique_pts.shape[0]}")
-        Visualizer.plot_point_cloud(unique_pts, colors=unique_colors, title="Sparse 3D Point Cloud from All Pairs", use_open3d=True)
+        Visualizer.plot_point_cloud(unique_pts, colors=unique_colors, title="Sparse 3D Point Cloud from All Pairs", use_open3d=True, remove_outliers=True)
     else:
         print("No valid 3D points found from the image pairs.")
 
